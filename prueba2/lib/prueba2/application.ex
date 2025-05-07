@@ -5,7 +5,7 @@ defmodule Prueba2.Application do
   def start(_type, _args) do
     Dotenv.load()
 
-    IO.puts(System.get_env("VARIABLE_1")) # Correcto
+    System.get_env("INTEGRANTES_EQUIPO") |> IO.puts # lee variable de entorno
 
     children = [
       # tus procesos supervisados aquí
