@@ -4,17 +4,16 @@ defmodule Prueba2.Application do
 
   @impl true
   def start(_type, _args) do
+    # Cargar variables de entorno desde el archivo .env
+    Dotenv.load()
+
     # Asegurarse de que inits están disponibles
     Application.ensure_all_started(:inets)
     Application.ensure_all_started(:ssl)
 
-    # Valores por defecto para dados
-    min_dado = 1
-    max_dado = 6
-
-    # número aleatorio entero en el rango
-    n_random = Enum.random(min_dado..max_dado)
-    Logger.info("Número aleatorio inicial: #{n_random}")
+    # Configuración para alias
+    max_alias_length = System.get_env("MAX_ALIAS_LENGTH", "15") |> String.to_integer()
+    Application.put_env(:prueba2, :max_alias_length, max_alias_length)
 
     children = [
       # Supervisar la red P2P

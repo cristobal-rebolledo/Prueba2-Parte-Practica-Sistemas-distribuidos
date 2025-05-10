@@ -14,11 +14,11 @@ defmodule Prueba2.IpDetector do
 
   # Lista de servicios para consultar IP pública
   @ip_services [
-    'http://api.ipify.org',
-    'http://ifconfig.me',
-    'http://ipinfo.io/ip',
-    'http://icanhazip.com',
-    'http://checkip.amazonaws.com'
+    ~c'http://api.ipify.org',
+    ~c'http://ifconfig.me',
+    ~c'http://ipinfo.io/ip',
+    ~c'http://icanhazip.com',
+    ~c'http://checkip.amazonaws.com'
   ]
 
   @doc """
