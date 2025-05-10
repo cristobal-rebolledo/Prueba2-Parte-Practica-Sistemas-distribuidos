@@ -18,7 +18,6 @@ defmodule Prueba2.UserInterface do
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
-
   def init(_) do
     # Configuración inicial
     username = get_username()
@@ -30,8 +29,18 @@ defmodule Prueba2.UserInterface do
     Application.put_env(:prueba2, :address, address)
     Application.put_env(:prueba2, :username, username)
 
-    # Iniciar el servidor HTTP
-    {:ok, _} = Plug.Cowboy.http(Prueba2.ApiRouter, [], port: port, ip: {0, 0, 0, 0})
+    # Iniciar el servidor HTTP con manejo de errores
+    case Plug.Cowboy.http(Prueba2.ApiRouter, [], port: port, ip: {0, 0, 0, 0}) do
+      {:ok, _} ->
+        Logger.info("Servidor HTTP iniciado en el puerto #{port}")
+      {:error, {:already_started, _}} ->
+        Logger.warning("El servidor HTTP ya se encuentra iniciado en el puerto #{port}")
+      {:error, reason} ->
+        Logger.error("Error al iniciar el servidor HTTP: #{inspect(reason)}")
+        IO.puts(@error_color <> "Error al iniciar el servidor HTTP: #{inspect(reason)}" <> @reset)
+        Process.sleep(2000) # Dar tiempo para que el mensaje sea visible
+        System.stop(1)
+    end
 
     # Obtener IP pública
     public_ip = IpDetector.get_public_ip()
@@ -45,7 +54,6 @@ defmodule Prueba2.UserInterface do
       username: username
     }}
   end
-
   # Solicitar nombre de usuario
   defp get_username do
     max_length = Application.get_env(:prueba2, :max_alias_length, 15)
@@ -55,17 +63,24 @@ defmodule Prueba2.UserInterface do
     IO.puts(@info_color <> "El nombre de usuario debe tener máximo #{max_length} caracteres" <> @reset)
     IO.write(@input_color <> "Introduce tu nombre de usuario: " <> @reset)
 
-    name = IO.gets("") |> String.trim()
+    case IO.gets("") do
+      nil ->
+        IO.puts(@error_color <> "Error al leer el nombre de usuario, intenta de nuevo." <> @reset)
+        Process.sleep(1000) # Dar tiempo para que el mensaje se muestre
+        get_username()
+      input ->
+        name = String.trim(input)
 
-    cond do
-      String.length(name) == 0 ->
-        IO.puts(@error_color <> "El nombre no puede estar vacío, intenta de nuevo." <> @reset)
-        get_username()
-      String.length(name) > max_length ->
-        IO.puts(@error_color <> "El nombre no puede exceder #{max_length} caracteres, intenta de nuevo." <> @reset)
-        get_username()
-      true ->
-        name
+        cond do
+          String.length(name) == 0 ->
+            IO.puts(@error_color <> "El nombre no puede estar vacío, intenta de nuevo." <> @reset)
+            get_username()
+          String.length(name) > max_length ->
+            IO.puts(@error_color <> "El nombre no puede exceder #{max_length} caracteres, intenta de nuevo." <> @reset)
+            get_username()
+          true ->
+            name
+        end
     end
   end
 
@@ -104,7 +119,6 @@ defmodule Prueba2.UserInterface do
         {:noreply, state}
     end
   end
-
   # Manejador para mostrar el menú principal
   def handle_info(:show_menu, state) do
     # Asegurarnos de tener el nombre de usuario actualizado desde la configuración global
@@ -119,7 +133,9 @@ defmodule Prueba2.UserInterface do
     IO.puts("\n" <> @input_color <> "Selecciona una opción:" <> @reset)
     IO.puts("1. " <> @highlight_color <> "Tirar un dado" <> @reset)
     IO.puts("2. " <> @highlight_color <> "Ver lista de peers conectados" <> @reset)
-    IO.puts("3. " <> @highlight_color <> "Salir de la red" <> @reset)
+    IO.puts("3. " <> @highlight_color <> "Ver estado del juego" <> @reset)
+    IO.puts("4. " <> @highlight_color <> "Unirse a un equipo" <> @reset)
+    IO.puts("5. " <> @highlight_color <> "Salir de la red" <> @reset)
 
     case IO.gets(@input_color <> "> " <> @reset) |> String.trim() do
       "1" ->
@@ -130,7 +146,16 @@ defmodule Prueba2.UserInterface do
         handle_show_peers()
         Process.send_after(self(), :show_menu, 1000)
         {:noreply, state}
-      "3" -> handle_exit()
+      "3" ->
+        handle_show_game_state()
+        Process.send_after(self(), :show_menu, 1000)
+        {:noreply, state}
+      "4" ->
+        handle_join_team(state.username)
+        Process.send_after(self(), :show_menu, 1000)
+        {:noreply, state}
+      "5" ->
+        handle_exit()
       _ ->
         IO.puts(@error_color <> "Opción no válida, intente de nuevo." <> @reset)
         Process.send_after(self(), :show_menu, 1000)
@@ -178,18 +203,30 @@ defmodule Prueba2.UserInterface do
     IO.puts(@dice_color <> "El resultado es: " <> bright() <> to_string(value) <> @reset)
     Prueba2.P2PNetwork.notify_dice_roll(value, state.username)
   end
-
   # Mostrar peers conectados
   defp handle_show_peers do
     peers = Prueba2.P2PNetwork.get_peers()
+    peers_details = Prueba2.P2PNetwork.get_peers_details()
     peer_count = map_size(peers)
 
     IO.puts("\n" <> @title_color <> "=== Peers conectados (#{peer_count}) ===" <> @reset)
     if peer_count == 0 do
       IO.puts(@info_color <> "No hay peers conectados todavía." <> @reset)
     else
-      Enum.each(peers, fn {address, username} ->
-        IO.puts(@peer_color <> "- #{username}" <> @reset <> @info_color <> " en " <> @highlight_color <> address <> @reset)
+      IO.puts(@info_color <> "Dirección | Nombre | Equipo" <> @reset)
+      IO.puts(@info_color <> "-------------------------------------" <> @reset)
+
+      # Ordenar los peers por equipo
+      peers_details
+      |> Enum.sort_by(fn {_, details} -> {details[:team] || "Sin equipo", details.username} end)
+      |> Enum.each(fn {address, details} ->
+        username = details.username
+        team = details.team || "Sin equipo"
+        team_display = if team == "Sin equipo", do: team, else: @highlight_color <> team <> @reset
+
+        IO.puts(@peer_color <> "- #{username}" <> @reset <>
+                @info_color <> " en " <> @highlight_color <> address <> @reset <>
+                " | Equipo: " <> team_display)
       end)
     end
   end
@@ -207,16 +244,23 @@ defmodule Prueba2.UserInterface do
     port = get_port_input()
     if check_port_availability(port) == :ok, do: port, else: get_available_port()
   end
-
   # Verificar disponibilidad del puerto
   defp check_port_availability(port) do
     try do
       case :gen_tcp.listen(port, []) do
-        {:ok, socket} -> :gen_tcp.close(socket); :ok
-        {:error, _} -> :error
+        {:ok, socket} ->
+          :gen_tcp.close(socket)
+          :ok
+        {:error, reason} ->
+          Logger.warning("Puerto #{port} no disponible: #{inspect(reason)}")
+          IO.puts(@error_color <> "Puerto #{port} no disponible, intenta con otro." <> @reset)
+          :error
       end
     rescue
-      _ -> :error
+      e ->
+        Logger.error("Error al verificar puerto: #{inspect(e)}")
+        IO.puts(@error_color <> "Error al verificar disponibilidad del puerto, intenta con otro." <> @reset)
+        :error
     end
   end
 
@@ -224,11 +268,22 @@ defmodule Prueba2.UserInterface do
   defp get_port_input do
     IO.puts(@input_color <> "Introduzca el puerto para su servidor:" <> @reset)
 
-    case IO.gets(@input_color <> "> " <> @reset) |> String.trim() |> Integer.parse() do
-      {port_num, _} when port_num > 0 and port_num < 65536 -> port_num
-      _ ->
-        IO.puts(@error_color <> "Puerto inválido, debe ser un número entre 1 y 65535." <> @reset)
+    case IO.gets(@input_color <> "> " <> @reset) do
+      nil ->
+        IO.puts(@error_color <> "Error al leer la entrada. Intentando de nuevo..." <> @reset)
+        Process.sleep(1000) # Dar tiempo para que se muestre el mensaje
         get_port_input()
+      input ->
+        case input |> String.trim() |> Integer.parse() do
+          {port_num, _} when port_num > 0 and port_num < 65536 ->
+            port_num
+          {port_num, _} ->
+            IO.puts(@error_color <> "Puerto #{port_num} fuera de rango, debe estar entre 1 y 65535." <> @reset)
+            get_port_input()
+          :error ->
+            IO.puts(@error_color <> "Entrada inválida, debe ingresar un número." <> @reset)
+            get_port_input()
+        end
     end
   end
 
@@ -275,4 +330,168 @@ defmodule Prueba2.UserInterface do
         Process.send_after(self(), :show_welcome, 1000)
     end
   end
+
+  # Mostrar estado actual del juego
+  defp handle_show_game_state do
+    try do
+      game_state = Prueba2.GameEngine.get_game_state()
+
+      IO.puts("\n" <> @title_color <> "===== Estado del Juego =====" <> @reset)
+
+      if game_state.game_started do
+        IO.puts(@info_color <> "Juego en progreso" <> @reset)
+        IO.puts(@info_color <> "Posición máxima del tablero: " <> @highlight_color <> "#{game_state.max_position}" <> @reset)
+        IO.puts(@info_color <> "Turno actual: " <> @highlight_color <> "#{game_state.current_turn}" <> @reset)
+
+        if game_state.winner do
+          IO.puts(@highlight_color <> "¡El juego ha terminado! Ganador: " <> @winner_color <> game_state.winner <> @reset)
+        end
+
+        IO.puts("\n" <> @title_color <> "Posiciones de los equipos:" <> @reset)
+
+        # Ordenar equipos por posición
+        teams_by_position = game_state.teams
+        |> Enum.sort_by(fn {_, info} -> -info.position end)  # Ordenar descendente por posición
+
+        Enum.each(teams_by_position, fn {team_name, info} ->
+          ready_status = if info.ready, do: "listo", else: "no listo"
+          players_count = length(info.players)
+
+          IO.puts(@team_color <> "#{team_name}: " <> @highlight_color <> "#{info.position}" <> @reset <>
+                  @info_color <> " puntos | #{players_count} jugadores | #{ready_status}" <> @reset)
+
+          # Mostrar jugadores
+          Enum.each(info.players, fn player ->
+            IO.puts(@info_color <> "  - #{player}" <> @reset)
+          end)
+        end)
+
+        # Mostrar historial reciente de tiradas
+        if length(game_state.roll_history) > 0 do
+          IO.puts("\n" <> @title_color <> "Últimos movimientos:" <> @reset)
+
+          game_state.roll_history
+          |> Enum.take(5)  # Mostrar solo las últimas 5 tiradas
+          |> Enum.each(fn entry ->
+            IO.puts(@info_color <> "#{entry.player} (#{entry.team}) tiró un #{entry.value}. Posición: #{entry.position}" <> @reset)
+          end)
+        end
+
+      else
+        IO.puts(@info_color <> "El juego no ha iniciado." <> @reset)
+
+        teams_ready = game_state.teams
+        |> Enum.filter(fn {_, info} -> info.ready end)
+        |> length()
+
+        teams_total = map_size(game_state.teams)
+
+        IO.puts(@info_color <> "Equipos listos: " <> @highlight_color <> "#{teams_ready} de #{teams_total}" <> @reset)
+
+        # Mostrar lista de equipos
+        IO.puts("\n" <> @title_color <> "Equipos:" <> @reset)
+        Enum.each(game_state.teams, fn {team_name, info} ->
+          players_count = length(info.players)
+          ready_status = if info.ready, do: "listo", else: "no listo"
+
+          IO.puts(@team_color <> "#{team_name}: " <> @reset <> @info_color <> "#{players_count} jugadores | #{ready_status}" <> @reset)
+
+          # Mostrar jugadores
+          Enum.each(info.players, fn player ->
+            IO.puts(@info_color <> "  - #{player}" <> @reset)
+          end)
+        end)
+      end
+
+    rescue
+      e ->
+        Logger.error("Error al obtener el estado del juego: #{inspect(e)}")
+        IO.puts(@error_color <> "Error al obtener el estado del juego." <> @reset)
+    end
+  end
+
+  # Unirse a un equipo
+  defp handle_join_team(player_name) do
+    try do
+      # Obtener equipos disponibles
+      teams = Prueba2.GameEngine.get_teams()
+
+      IO.puts("\n" <> @title_color <> "===== Unirse a un Equipo =====" <> @reset)
+      IO.puts(@info_color <> "Equipos disponibles:" <> @reset)
+
+      # Mostrar lista numerada de equipos
+      teams_list = teams |> Map.keys() |> Enum.sort()
+
+      Enum.with_index(teams_list, 1) |> Enum.each(fn {team_name, idx} ->
+        team_info = teams[team_name]
+        players_count = length(team_info.players)
+
+        IO.puts("#{idx}. " <> @highlight_color <> "#{team_name}" <> @reset <>
+                @info_color <> " (#{players_count} jugadores)" <> @reset)
+      end)
+
+      # Opción para crear nuevo equipo
+      new_team_idx = length(teams_list) + 1
+      IO.puts("#{new_team_idx}. " <> @highlight_color <> "Crear nuevo equipo" <> @reset)
+
+      # Solicitar selección
+      IO.write(@input_color <> "Seleccione un equipo (1-#{new_team_idx}): " <> @reset)
+
+      case IO.gets("") |> String.trim() do
+        "" ->
+          IO.puts(@error_color <> "Selección cancelada." <> @reset)
+
+        selection ->
+          case Integer.parse(selection) do
+            {idx, _} when idx >= 1 and idx <= length(teams_list) ->
+              # Unirse a un equipo existente
+              selected_team = Enum.at(teams_list, idx - 1)
+              result = Prueba2.GameEngine.add_player_to_team(player_name, selected_team)
+
+              case result do
+                {:ok, _} ->
+                  IO.puts(@info_color <> "Te has unido al equipo " <> @highlight_color <> selected_team <> @reset)
+                {:error, reason} ->
+                  IO.puts(@error_color <> "Error: #{reason}" <> @reset)
+              end
+
+            {^new_team_idx, _} ->
+              # Crear un nuevo equipo
+              IO.write(@input_color <> "Nombre para el nuevo equipo: " <> @reset)
+              team_name = IO.gets("") |> String.trim()
+
+              if String.length(team_name) > 0 do
+                # Registrar el nuevo equipo
+                case Prueba2.GameEngine.register_team(team_name) do
+                  {:ok, _} ->
+                    IO.puts(@info_color <> "Equipo " <> @highlight_color <> team_name <> @reset <> @info_color <> " creado correctamente." <> @reset)
+                    # Ahora unirse al equipo recién creado
+                    case Prueba2.GameEngine.add_player_to_team(player_name, team_name) do
+                      {:ok, _} ->
+                        IO.puts(@info_color <> "Te has unido al equipo " <> @highlight_color <> team_name <> @reset)
+                      {:error, reason} ->
+                        IO.puts(@error_color <> "Error al unirse: #{reason}" <> @reset)
+                    end
+                  {:error, reason} ->
+                    IO.puts(@error_color <> "Error al crear equipo: #{reason}" <> @reset)
+                end
+              else
+                IO.puts(@error_color <> "Nombre de equipo no válido." <> @reset)
+              end
+
+            _ ->
+              IO.puts(@error_color <> "Selección no válida." <> @reset)
+          end
+      end
+
+    rescue
+      e ->
+        Logger.error("Error al manejar unión a equipo: #{inspect(e)}")
+        IO.puts(@error_color <> "Error al procesar la solicitud de unirse a un equipo." <> @reset)
+    end
+  end
+
+  # Variable para color de equipos y ganador
+  @team_color cyan()
+  @winner_color bright() <> magenta()
 end

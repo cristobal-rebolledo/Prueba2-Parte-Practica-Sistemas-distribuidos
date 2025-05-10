@@ -118,6 +118,26 @@ defmodule Prueba2.ApiRouter do
     Prueba2.P2PNetwork.remove_peer(exiting_peer)
     send_resp(conn, 200, Jason.encode!(%{status: "ok"}))
   end
+  # Endpoint para recibir mensajes del juego
+  post "/api/game-message" do
+    %{"message" => message, "username" => username} = conn.body_params
+
+    cond do
+      String.starts_with?(message, "GAME_EVENT:") ->
+        game_msg = String.replace_prefix(message, "GAME_EVENT:", "") |> String.trim()
+        IO.puts(@notification_color <> "[JUEGO] " <> @reset <> game_msg)
+      String.starts_with?(message, "GAME_OVER:") ->
+        game_msg = String.replace_prefix(message, "GAME_OVER:", "") |> String.trim()
+        IO.puts(bright() <> magenta() <> "¡FIN DEL JUEGO! " <> @reset <> game_msg)
+      String.starts_with?(message, "GAME_SUMMARY:") ->
+        game_msg = String.replace_prefix(message, "GAME_SUMMARY:", "") |> String.trim()
+        IO.puts(bright() <> green() <> game_msg <> @reset)
+      true ->
+        IO.puts(@notification_color <> "Mensaje de #{username}: " <> @reset <> message)
+    end
+
+    send_resp(conn, 200, "OK")
+  end
 
   match _ do
     send_resp(conn, 404, "Ruta no encontrada")
