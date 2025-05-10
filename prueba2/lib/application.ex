@@ -1,23 +1,29 @@
 defmodule Prueba2.Application do
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
-    Dotenv.load()
+    # Asegurarse de que inits están disponibles
+    Application.ensure_all_started(:inets)
+    Application.ensure_all_started(:ssl)
 
-    #min_dado = System.get_env("CANT_MIN_DADO") |> String.trim() |> String.to_integer()
-    #max_dado = System.get_env("CANT_MAX_DADO") |> String.trim() |> String.to_integer()
+    # Valores por defecto para dados
+    min_dado = 1
+    max_dado = 6
 
     # número aleatorio entero en el rango
     n_random = Enum.random(min_dado..max_dado)
-    IO.puts("El número random es: #{n_random}")
-
-
+    Logger.info("Número aleatorio inicial: #{n_random}")
 
     children = [
-      # tus procesos supervisados aquí
+      # Supervisar la red P2P
+      {Prueba2.P2PNetwork, []},
+      # Iniciar la interfaz de usuario
+      {Prueba2.UserInterface, []}
     ]
 
+    Logger.info("Iniciando aplicación P2P...")
     Supervisor.start_link(children, strategy: :one_for_one, name: Prueba2.Supervisor)
   end
 end
