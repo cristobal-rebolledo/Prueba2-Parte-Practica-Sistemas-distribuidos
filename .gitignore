@@ -1,3 +1,5 @@
+node_modules/
+
 # The directory Mix will write compiled artifacts to.
 /_build/
 
@@ -22,5 +24,7 @@ prueba2-*.tar
 # Temporary files, for example, from tests.
 /tmp/
 
-# Node.js dependencies
-node_modules/
+# Ignore database files
+*.db
+
+bun.lockb
