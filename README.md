@@ -28,7 +28,7 @@ Seguir instrucciones oficiales o instalar mediante apt.
 
 ### 2. Clonar el repositorio
 
-git clone https://github.com/tu-usuario/sistema-p2p-dados.git
+git clone https://github.com/tu-usuario/sistema-p2p-dados.git](https://github.com/cristobal-rebolledo/Prueba2-Parte-Practica-Sistemas-distribuidos.git
 
 ### 3. Instalar las dependencias 
 mix deps.get
