@@ -5,10 +5,14 @@ defmodule Prueba2.ApiRouter do
 
   @notification_color bright() <> cyan()
   @dice_color magenta()
-  @error_color bright() <> red()
   @reset reset()
 
-  plug Plug.Logger
+  # Helper function for safely handling collections
+  defp safe_size(collection) when is_map(collection), do: map_size(collection)
+  defp safe_size(collection) when is_list(collection), do: length(collection)
+  defp safe_size(_), do: 0
+
+  # Quitamos Plug.Logger para eliminar los mensajes de solicitudes HTTP
   plug :match
   plug Plug.Parsers, parsers: [:json], json_decoder: Jason
   plug :dispatch
@@ -22,8 +26,6 @@ defmodule Prueba2.ApiRouter do
   post "/api/join-network" do
     %{"address" => requester_address, "username" => requester_username} = conn.body_params
     password_hash = Map.get(conn.body_params, "password_hash")
-
-    IO.puts(@notification_color <> "#{requester_username} (#{requester_address}) solicita unirse a la red" <> @reset)
 
     # Verificar si el nombre de usuario es muy largo
     max_length = Application.get_env(:prueba2, :max_alias_length, 15)
@@ -41,7 +43,6 @@ defmodule Prueba2.ApiRouter do
 
       # Verificar longitud máxima
       String.length(requester_username) > max_length ->
-        IO.puts(@error_color <> "Error: Nombre de usuario demasiado largo (máximo #{max_length} caracteres)" <> @reset)
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(400, Jason.encode!(%{
@@ -51,7 +52,6 @@ defmodule Prueba2.ApiRouter do
 
       # Verificar nombre vacío
       String.length(requester_username) == 0 ->
-        IO.puts(@error_color <> "Error: El nombre de usuario no puede estar vacío" <> @reset)
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(400, Jason.encode!(%{
@@ -61,7 +61,6 @@ defmodule Prueba2.ApiRouter do
 
       # Verificar si coincide con el nombre del host
       requester_username == my_username ->
-        IO.puts(@error_color <> "Error: El nombre de usuario coincide con el del host" <> @reset)
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(409, Jason.encode!(%{
@@ -71,7 +70,6 @@ defmodule Prueba2.ApiRouter do
 
       # Verificar si ya existe en la red
       Prueba2.P2PNetwork.username_exists?(requester_username) ->
-        IO.puts(@error_color <> "Error: El nombre de usuario ya está en uso en la red" <> @reset)
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(409, Jason.encode!(%{
@@ -88,12 +86,34 @@ defmodule Prueba2.ApiRouter do
                     |> Enum.reject(fn {addr, _} -> addr == requester_address end)
                     |> Enum.map(fn {addr, name} -> %{address: addr, username: name} end)
 
+        # Obtenemos la información de equipos para enviar al nuevo miembro
+        teams_data = Prueba2.TeamManager.get_teams()
+        # Obtenemos la lista de equipos con IDs secretos
+        lista_equipos = Prueba2.TeamManager.get_lista_equipos()
+
+        # Convertir tuplas a mapas para serialización JSON
+        lista_equipos_serializable = Enum.map(lista_equipos, fn
+          {address, secret, equipo} ->
+            %{address: address, secret: secret, equipo: to_string(equipo)}
+          {address, secret} ->
+            %{address: address, secret: secret, equipo: "No especificado"}
+        end)
+
+        # Convertir cualquier MapSet a lista por robustez (aunque TeamManager ya lo hace)
+        teams_data_map = Enum.into(teams_data, %{}, fn {team, info} ->
+          players = if Map.has_key?(info, :players), do: Map.get(info, :players), else: []
+          players_list = if is_list(players), do: players, else: Enum.to_list(players)
+          {team, %{info | players: players_list}}
+        end)
+
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(200, Jason.encode!(%{
           status: "success",
           peers: peers_list,
-          host_username: my_username
+          host_username: my_username,
+          teams: teams_data_map,
+          lista_equipos: lista_equipos_serializable
         }))
     end
   end
@@ -103,9 +123,10 @@ defmodule Prueba2.ApiRouter do
 
     # Verificar si el nombre ya existe antes de añadirlo
     if Prueba2.P2PNetwork.username_exists?(new_username) do
-      IO.puts(@error_color <> "Ignorando notificación: nombre '#{new_username}' ya existe en la red" <> @reset)
+      # Silenciar mensajes de error
     else
-      IO.puts(@notification_color <> "#{notifier_username} notifica sobre nuevo peer: #{new_username} (#{new_address})" <> @reset)
+      # Mostrar un mensaje más sencillo solo cuando un peer se une
+      IO.puts(@notification_color <> "#{new_username} se unió a la red" <> @reset)
       Prueba2.P2PNetwork.add_peer(new_address, new_username)
     end
 
@@ -114,29 +135,104 @@ defmodule Prueba2.ApiRouter do
 
   post "/api/peer-exit" do
     %{"peer" => exiting_peer, "username" => exiting_username} = conn.body_params
-    IO.puts(@notification_color <> "#{exiting_username} (#{exiting_peer}) ha salido de la red" <> @reset)
+    # Mostrar un mensaje sencillo cuando un peer se va
+    IO.puts(@notification_color <> "#{exiting_username} salió de la red" <> @reset)
     Prueba2.P2PNetwork.remove_peer(exiting_peer)
     send_resp(conn, 200, Jason.encode!(%{status: "ok"}))
   end
-  # Endpoint para recibir mensajes del juego
-  post "/api/game-message" do
-    %{"message" => message, "username" => username} = conn.body_params
 
-    cond do
-      String.starts_with?(message, "GAME_EVENT:") ->
-        game_msg = String.replace_prefix(message, "GAME_EVENT:", "") |> String.trim()
-        IO.puts(@notification_color <> "[JUEGO] " <> @reset <> game_msg)
-      String.starts_with?(message, "GAME_OVER:") ->
-        game_msg = String.replace_prefix(message, "GAME_OVER:", "") |> String.trim()
-        IO.puts(bright() <> magenta() <> "¡FIN DEL JUEGO! " <> @reset <> game_msg)
-      String.starts_with?(message, "GAME_SUMMARY:") ->
-        game_msg = String.replace_prefix(message, "GAME_SUMMARY:", "") |> String.trim()
-        IO.puts(bright() <> green() <> game_msg <> @reset)
-      true ->
-        IO.puts(@notification_color <> "Mensaje de #{username}: " <> @reset <> message)
+  post "/api/team-membership-update" do
+    %{"player_name" => player_name, "team_name" => team_name} = conn.body_params
+
+    # Actualizar registro local de membresía (usando la nueva API)
+    Prueba2.TeamManager.join_team(player_name, team_name)
+
+    # Actualizar la información del peer si se trata de un usuario local
+    try do
+      Process.send_after(Prueba2.P2PNetwork, {:update_player_team, player_name, team_name}, 100)
+    rescue
+      _ -> nil # Silenciar errores
+    end
+
+    send_resp(conn, 200, Jason.encode!(%{status: "ok"}))
+  end
+
+  post "/api/message" do
+    %{"message" => message, "from" => from_username} = conn.body_params
+
+    if String.starts_with?(message, "TEAM_EVENT: ") do
+      # Es un evento de equipo, lo mostramos con formato especial
+      team_message = String.replace_prefix(message, "TEAM_EVENT: ", "")
+      # Mantener los mensajes de equipo para mejor experiencia de usuario
+      IO.puts(cyan() <> "[EQUIPO] " <> reset() <> team_message)
+    else
+      # Solo mostrar mensajes importantes o de jugadas
+      if String.contains?(message, ["jugó", "ganó", "avanzó", "posición", "terminó"]) do
+        IO.puts(bright() <> "#{from_username}: " <> reset() <> message)
+      end
+      # Eliminamos logs de otros mensajes menos importantes
     end
 
     send_resp(conn, 200, "OK")
+  end
+
+  get "/api/get-teams" do
+    # Obtener todos los equipos y enviarlos como respuesta
+    teams = Prueba2.TeamManager.get_teams()
+
+    # Convertir cualquier MapSet a lista por robustez
+    teams_map = Enum.into(teams, %{}, fn {team, info} ->
+      players = if Map.has_key?(info, :players), do: Map.get(info, :players), else: []
+      players_list = if is_list(players), do: players, else: Enum.to_list(players)
+      {team, %{info | players: players_list}}
+    end)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{
+      status: "success",
+      teams: teams_map
+    }))
+  end
+
+  get "/api/get-lista-equipos" do
+    # Obtener lista de equipos con IDs secretos
+    lista_equipos = Prueba2.TeamManager.get_lista_equipos()
+
+    # Convertir tuplas a mapas para serialización JSON
+    lista_equipos_serializable = Enum.map(lista_equipos, fn
+      {address, secret, equipo} ->
+        %{address: address, secret: secret, equipo: to_string(equipo)}
+      {address, secret} ->
+        %{address: address, secret: secret, equipo: "No especificado"}
+    end)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{
+      status: "success",
+      lista_equipos: lista_equipos_serializable
+    }))
+  end
+
+  get "/api/get-lista-peers" do
+    # Obtener lista de peers con información de equipo
+    lista_peers = Prueba2.TeamManager.get_lista_peers()
+
+    # Convertir tuplas a mapas para serialización JSON
+    lista_peers_serializable = Enum.map(lista_peers, fn
+      {address, username, equipo} ->
+        %{address: address, username: username, equipo: to_string(equipo)}
+      {address, username} ->
+        %{address: address, username: username, equipo: "NA"}
+    end)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{
+      status: "success",
+      lista_peers: lista_peers_serializable
+    }))
   end
 
   match _ do
