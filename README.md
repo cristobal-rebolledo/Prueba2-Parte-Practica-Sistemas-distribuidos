@@ -17,14 +17,9 @@ Erlang OTP 24 o superior
 Mix (incluido con Elixir)
 
 ## Instalación
-### 1. Instalar Elixir y Erlang
-Windows:
-
-macOS:
-Usar Homebrew:
-
-Linux (Ubuntu/Debian):
-Seguir instrucciones oficiales o instalar mediante apt.
+### 1. Instalar Elixir y Erlang 
+(sigue las instrucciones según tu sistema operativo)
+https://elixir-lang.org/install.html
 
 ### 2. Clonar el repositorio
 
