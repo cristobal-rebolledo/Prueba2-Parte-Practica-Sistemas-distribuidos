@@ -1,62 +1,35 @@
 # Prueba2-Parte-Practica-Sistemas-distribuidos
-🧊 Sistema P2P de Dados
 Este proyecto implementa un sistema P2P (peer-to-peer) para un juego de dados con equipos y gestión de peers en Elixir.
 
-📌 Descripción
+## Descripción
 El Sistema P2P de Dados permite a múltiples usuarios conectarse en una red descentralizada para jugar dados en equipos.
-Cada usuario puede:
-
+### Cada usuario puede:
 Crear una red o unirse a una existente
-
 Seleccionar un equipo
-
 Participar en el juego
-
 La aplicación mantiene sincronizadas las listas de peers y equipos entre todos los nodos conectados.
 
-✨ Características principales
-🌐 Red P2P completamente descentralizada
-
-🛡️ Gestión de equipos con identificadores secretos
-
-🔐 Sistema de autenticación mediante contraseñas
-
-🖥️ Interfaz de usuario en consola
-
-📡 API HTTP para comunicación entre nodos
-
-🚨 Detección automática de desconexiones de peers
-
-⚙️ Requisitos previos
+## Requisitos previos
 Elixir 1.13 o superior
 
 Erlang OTP 24 o superior
 
 Mix (incluido con Elixir)
 
-📦 Instalación
+## Instalación
 1. Instalar Elixir y Erlang
-Windows:
-Usar el instalador oficial o instalar mediante Chocolatey:
+### Windows:
 
-sh
-Copiar
-Editar
-choco install elixir
 macOS:
 Usar Homebrew:
 
-sh
-Copiar
-Editar
-brew install elixir
 Linux (Ubuntu/Debian):
 Seguir instrucciones oficiales o instalar mediante apt.
 
 2. Clonar el repositorio
 sh
 Copiar
-Editar
+Edita
 git clone https://github.com/tu-usuario/sistema-p2p-dados.git
 cd sistema-p2p-dados
 3. Instalar las dependencias
