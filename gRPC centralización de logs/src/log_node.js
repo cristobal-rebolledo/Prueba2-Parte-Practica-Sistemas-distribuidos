@@ -5,6 +5,7 @@ import protoLoader from '@grpc/proto-loader'
 import path from 'path'
 import { Database } from 'bun:sqlite'
 import os from 'os'
+import zlib from 'zlib'
 
 config()
 const PORT = process.env.PORT || 50051
@@ -98,6 +99,40 @@ const color = (t, c) => `\x1b[${c}m${t}\x1b[0m`
 const CYAN = '36', YELLOW = '33', GREEN = '32', RED = '31', MAGENTA = '35', BOLD = '1'
 let lastResult, serverIp = '', serverPort = PORT
 
+async function saveDump(comprimir = false) {
+  // Obtener enums y logs traducidos
+  const enumsArr = db.query('SELECT hash, valor FROM enums').all()
+  const enumMap = new Map(enumsArr.map(e => [e.hash, e.valor]))
+  const rows = db.query('SELECT timestamp, id_instancia, marcador, ip, alias, accion, args FROM logs WHERE id_instancia IS NOT NULL ORDER BY timestamp ASC').all()
+  const translatedRows = rows.map(row => ({
+    ...row,
+    accion: enumMap.get(Number(row.accion)) ?? row.accion,
+    marcador: enumMap.get(Number(row.marcador)) ?? row.marcador
+  }))
+  const fs = require('fs'), path = require('path')
+  const dumpsDir = path.join(process.cwd(), 'dumps')
+  if (!fs.existsSync(dumpsDir)) fs.mkdirSync(dumpsDir)
+  
+  // Usamos .gz para gzip que es más compatible
+  const ext = comprimir ? 'gz' : 'json'
+  const file = path.join(dumpsDir, `dump_buffer_${Date.now()}.json${comprimir ? ".gz":""}`)
+  
+  try {
+    if (comprimir) {
+      // Usar zlib.gzipSync para compresión
+      const jsonString = JSON.stringify(translatedRows)
+      const compressed = zlib.gzipSync(jsonString, { level: 5 })
+      fs.writeFileSync(file, compressed)
+    } else {
+      fs.writeFileSync(file, JSON.stringify(translatedRows, null, 2))
+    }
+    lastResult = color(`Dump guardado en ${file}`, GREEN)
+  } catch (err) {
+    lastResult = color(`Error al crear dump: ${err.message}`, RED)
+    throw err
+  }
+}
+
 function showMenu() {
   process.stdout.write('\x1Bc')
   console.log(color(`Servidor gRPC de logs (buffer circular) escuchando en ${serverIp}:${serverPort}`, `${BOLD};${CYAN}`))
@@ -105,10 +140,11 @@ function showMenu() {
   if (lastResult) console.log(lastResult, '\n')
   console.log(color('1. Limpiar base de datos', YELLOW))
   console.log(color('2. Mostrar cantidad de registros', YELLOW))
-  console.log(color('3. Dump buffer a archivo', YELLOW))
+  console.log(color('3. Dump buffer a JSON bruto', YELLOW))
   console.log(color('4. Mostrar diccionario de enums', YELLOW))
   console.log(color('5. Reiniciar servidor', YELLOW))
   console.log(color('6. Cerrar servidor (sin reinicio)', YELLOW))
+  console.log(color('7. Exportar buffer comprimido (zlib)', YELLOW))
   console.log(color('0. Volver', YELLOW))
   process.stdout.write(color('Selecciona una opción: ', CYAN))
 }
@@ -124,28 +160,8 @@ function handleMenuInput(data) {
   } else if (opt === '2') {
     lastResult = color(`Cantidad de registros en buffer: ${db.query('SELECT COUNT(*) as c FROM logs WHERE id_instancia IS NOT NULL').get().c}`, GREEN)
   } else if (opt === '3') {
-    try {
-      // Obtener todos los enums en un Map para traducción rápida
-      const enumsArr = db.query('SELECT hash, valor FROM enums').all()
-      const enumMap = new Map(enumsArr.map(e => [e.hash, e.valor]))
-      // Excluir idx del dump
-      const rows = db.query('SELECT timestamp, id_instancia, marcador, ip, alias, accion, args FROM logs WHERE id_instancia IS NOT NULL ORDER BY timestamp ASC').all()
-      // Traducir hashes a strings legibles para accion y marcador usando el Map
-      const translatedRows = rows.map(row => ({
-        ...row,
-        accion: enumMap.get(Number(row.accion)) ?? row.accion,
-        marcador: enumMap.get(Number(row.marcador)) ?? row.marcador
-      }))
-      const fs = require('fs')
-      const path = require('path')
-      const dumpsDir = path.join(process.cwd(), 'dumps')
-      if (!fs.existsSync(dumpsDir)) fs.mkdirSync(dumpsDir)
-      const file = path.join(dumpsDir, `dump_buffer_${Date.now()}.json`)
-      fs.writeFileSync(file, JSON.stringify(translatedRows, null, 2))
-      lastResult = color(`Dump guardado en ${file}`, GREEN)
-    } catch (e) {
-      lastResult = color('Error al crear dump: ' + e.message, RED)
-    }
+    saveDump(false).then(showMenu).catch(e => { lastResult = color('Error al crear dump: ' + e.message, RED); showMenu() })
+    return
   } else if (opt === '4') {
     // Diccionario de enums como tabla simple y corta
     const enums = db.query('SELECT hash, valor FROM enums ORDER BY valor ASC').all()
@@ -161,6 +177,9 @@ function handleMenuInput(data) {
     lastResult = color('Reiniciando servidor...', MAGENTA); shutdown(false)
   } else if (opt === '6') {
     lastResult = color('Cerrando servidor (sin reinicio)...', RED); shutdown(true)
+  } else if (opt === '7') {
+    saveDump(true).then(showMenu).catch(e => { lastResult = color('Error al crear dump: ' + e.message, RED); showMenu() })
+    return
   } else if (opt !== '0') {
     lastResult = color('Opción no válida', RED)
   }
