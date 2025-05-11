@@ -32,11 +32,10 @@ git clone https://github.com/tu-usuario/sistema-p2p-dados.git
 
 ### 3. Instalar las dependencias 
 mix deps.get
-#### Ejecucióm
-Para iniciar la aplicación
-mix run --no-halt
+#### Ejecución
+Para ejecutar la aplicación usar el siguiente comando en directorio prueba2
 
-Este comando compila la aplicación y la mantiene en ejecución, lo cual es necesario para que la red P2P funcione continuamente.
+mix run --no-halt
 
 #### Tecnologías utilizadas
 Elixir/OTP: Lenguaje y plataforma base
