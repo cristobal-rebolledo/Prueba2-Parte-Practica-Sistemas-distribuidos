@@ -4,6 +4,8 @@ defmodule Prueba2.UserInterface do
   import IO.ANSI
   alias Prueba2.IpDetector
   alias Prueba2.PasswordManager
+  alias Prueba2.UserInterface.Helpers
+  alias Prueba2.UserInterface.Display
 
   # Colores para mensajes
   @title_color bright() <> blue()
@@ -15,11 +17,6 @@ defmodule Prueba2.UserInterface do
   @peer_color bright() <> white()
   @team_color cyan()
   @reset reset()
-
-  # Helper functions for safe operations
-  defp safe_size(collection) when is_map(collection), do: map_size(collection)
-  defp safe_size(collection) when is_list(collection), do: length(collection)
-  defp safe_size(_), do: 0
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -125,7 +122,7 @@ defmodule Prueba2.UserInterface do
 
     # Verificar si el usuario pertenece a un equipo
     teams = Prueba2.TeamManager.get_teams()
-    user_team = find_user_team(teams, state.username)
+    user_team = Helpers.find_user_team(teams, state.username)
 
     IO.puts("\n" <> @input_color <> "Selecciona una opción:" <> @reset)
     IO.puts("1. " <> @highlight_color <> "Tirar un dado" <> @reset)
@@ -134,12 +131,15 @@ defmodule Prueba2.UserInterface do
 
     if user_team do
       IO.puts("4. " <> @highlight_color <> "Solicitar inicio del juego" <> @reset)
-      IO.puts("5. " <> @highlight_color <> "Salir de la red" <> @reset)
+      IO.puts("5. " <> @highlight_color <> "Ver lista detallada de peers (TeamController)" <> @reset)
+      IO.puts("6. " <> @highlight_color <> "Ver lista de peers de mi equipo con ID secreto" <> @reset)
+      IO.puts("7. " <> @highlight_color <> "Salir de la red" <> @reset)
     else
       IO.puts("4. " <> @highlight_color <> "Unirse a un equipo" <> @reset)
-      IO.puts("5. " <> @highlight_color <> "Salir de la red" <> @reset)
+      IO.puts("5. " <> @highlight_color <> "Ver lista detallada de peers (TeamController)" <> @reset)
+      IO.puts("6. " <> @highlight_color <> "Ver lista de equipos con ID secreto" <> @reset)
+      IO.puts("7. " <> @highlight_color <> "Salir de la red" <> @reset)
     end
-
     case IO.gets(@input_color <> "> " <> @reset) |> String.trim() do
       "1" ->
         handle_dice_roll(state)
@@ -162,6 +162,14 @@ defmodule Prueba2.UserInterface do
         Process.send_after(self(), :show_menu, 1000)
         {:noreply, state}
       "5" ->
+        handle_show_team_controller_peers()
+        Process.send_after(self(), :show_menu, 1000)
+        {:noreply, state}
+      "6" ->
+        handle_show_team_controller_my_team()
+        Process.send_after(self(), :show_menu, 1000)
+        {:noreply, state}
+      "7" ->
         handle_exit()
       _ ->
         IO.puts(@error_color <> "Opción no válida, intente de nuevo." <> @reset)
@@ -254,16 +262,7 @@ defmodule Prueba2.UserInterface do
   # Mostrar peers conectados
   defp handle_show_peers do
     peers = Prueba2.P2PNetwork.get_peers()
-    peer_count = safe_size(peers)
-
-    IO.puts("\n" <> @title_color <> "=== Peers conectados (#{peer_count}) ===" <> @reset)
-    if peer_count == 0 do
-      IO.puts(@info_color <> "No hay peers conectados todavía." <> @reset)
-    else
-      Enum.each(peers, fn {address, username} ->
-        IO.puts(@peer_color <> "- #{username}" <> @reset <> @info_color <> " en " <> @highlight_color <> address <> @reset)
-      end)
-    end
+    Display.show_peers(peers)
   end
 
   # Salir de la aplicación
@@ -331,12 +330,17 @@ defmodule Prueba2.UserInterface do
           # Si la respuesta incluye información de equipos, sincronizamos
           if Map.has_key?(decoded, "teams") do
             teams_data = decoded["teams"]
-            IO.puts(@info_color <> "Sincronizando información de " <> @highlight_color <> "#{safe_size(teams_data)}" <> @reset <> @info_color <> " equipos." <> @reset)
-            Prueba2.TeamManager.sync_teams_from_network(teams_data)
-          else
-            # De lo contrario, solicitamos la información de equipos al nodo inicial
-            IO.puts(@info_color <> "Solicitando información de equipos..." <> @reset)
-            request_teams_data(target_address)
+            IO.puts(@info_color <> "Sincronizando información de " <> @highlight_color <> "#{Helpers.safe_size(teams_data)}" <> @reset <> @info_color <> " equipos." <> @reset)
+            Prueba2.TeamManager.sync_teams_from_network(teams_data)          else
+            # No hay equipos disponibles todavía
+            IO.puts(@info_color <> "No hay información de equipos disponible en la red." <> @reset)
+          end
+
+          # Sincronizar lista_equipos si está disponible
+          if Map.has_key?(decoded, "lista_equipos") do
+            lista_equipos_data = decoded["lista_equipos"]
+            IO.puts(@info_color <> "Sincronizando lista de equipos con " <> @highlight_color <> "#{Helpers.safe_size(lista_equipos_data)}" <> @reset <> @info_color <> " registros." <> @reset)
+            Prueba2.TeamManager.sync_lista_equipos(lista_equipos_data)
           end
 
           Process.send_after(self(), :show_menu, 500)
@@ -366,7 +370,7 @@ defmodule Prueba2.UserInterface do
 
     IO.puts("\n" <> @title_color <> "===== Estado del Juego =====" <> @reset)
 
-    if safe_size(teams) == 0 do
+    if Helpers.safe_size(teams) == 0 do
       IO.puts(@info_color <> "No hay equipos registrados todavía." <> @reset)
     else
       all_ready = Prueba2.TeamManager.all_teams_ready?()
@@ -375,7 +379,7 @@ defmodule Prueba2.UserInterface do
         IO.puts(@info_color <> "Todos los equipos están listos para jugar." <> @reset)
       else
         ready_count = Enum.count(teams, fn {_, info} -> info.ready end)
-        IO.puts(@info_color <> "Equipos listos: #{ready_count} de #{safe_size(teams)}" <> @reset)
+        IO.puts(@info_color <> "Equipos listos: #{ready_count} de #{Helpers.safe_size(teams)}" <> @reset)
       end
 
       IO.puts("\n" <> @title_color <> "Equipos:" <> @reset)
@@ -404,7 +408,6 @@ defmodule Prueba2.UserInterface do
         IO.puts(@error_color <> "Error: #{reason}" <> @reset)
     end
   end
-
   # Manejar la selección de equipo
   defp handle_team_selection(player_name) do
     # Obtener equipos disponibles
@@ -412,7 +415,7 @@ defmodule Prueba2.UserInterface do
 
     IO.puts("\n" <> @title_color <> "===== Unirse a un Equipo =====" <> @reset)
 
-    if safe_size(teams) == 0 do
+    if Helpers.safe_size(teams) == 0 do
       IO.puts(@info_color <> "No hay equipos disponibles todavía. Espera a que el creador de la red los configure." <> @reset)
     else
       IO.puts(@info_color <> "Equipos disponibles:" <> @reset)
@@ -478,44 +481,21 @@ defmodule Prueba2.UserInterface do
         IO.puts(@error_color <> "Error: #{reason}" <> @reset)
     end
   end
+  # Mostrar la lista de peers desde TeamController
 
-  # Encontrar el equipo de un usuario
-  defp find_user_team(teams, username) do
-    Enum.find_value(teams, fn {team_name, team_data} ->
-      if username in team_data.players do
-        team_name
-      else
-        nil
-      end
-    end)
+  # Mostrar la lista de peers desde TeamController
+  defp handle_show_team_controller_peers do
+    peers = Prueba2.TeamManager.get_lista_peers()
+    Display.show_team_controller_peers(peers)
+  end
+  # Mostrar la lista de equipos desde TeamController
+  defp handle_show_team_controller_teams do
+    teams = Prueba2.TeamManager.get_lista_equipos()
+    Display.show_team_controller_teams(teams)
   end
 
-  # Solicitar información de equipos a un peer
-  defp request_teams_data(peer_address) do
-    url = "http://#{peer_address}/api/get-teams"
-    headers = [{"Content-Type", "application/json"}]
-
-    try do
-      response = HTTPoison.get!(url, headers, [timeout: 5_000, recv_timeout: 5_000])
-
-      case response do
-        %HTTPoison.Response{status_code: 200, body: body} ->
-          decoded = Jason.decode!(body)
-          teams_data = decoded["teams"]
-
-          if teams_data && safe_size(teams_data) > 0 do
-            IO.puts(@info_color <> "Recibida información de #{safe_size(teams_data)} equipos." <> @reset)
-            Prueba2.TeamManager.sync_teams_from_network(teams_data)
-          else
-            IO.puts(@info_color <> "No hay equipos registrados en la red." <> @reset)
-          end
-
-        _ ->
-          IO.puts(@error_color <> "Error al solicitar información de equipos." <> @reset)
-      end
-    rescue
-      e ->
-        IO.puts(@error_color <> "Error de conexión: #{inspect(e)}." <> @reset)
-    end
+  defp handle_show_team_controller_my_team do
+    team_peers = Prueba2.TeamManager.get_lista_mi_equipo()
+    Display.show_team_controller_my_team(team_peers)
   end
 end

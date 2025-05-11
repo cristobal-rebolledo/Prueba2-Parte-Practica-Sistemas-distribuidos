@@ -63,7 +63,7 @@ defmodule Prueba2.P2PNetwork do
         {:noreply, state}
       true ->
         # Podemos añadir el peer
-        notify_existing_peers_about_new_peer(state.peers, address, username)
+        notify_existing_peers_about_new_peer(state.peers, address, username )
         new_peers = Map.put(state.peers, address, username)
         new_usernames = MapSet.put(state.usernames, username)
         {:noreply, %{state | peers: new_peers, usernames: new_usernames}}

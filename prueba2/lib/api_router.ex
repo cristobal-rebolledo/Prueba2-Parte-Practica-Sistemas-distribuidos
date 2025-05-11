@@ -88,13 +88,23 @@ defmodule Prueba2.ApiRouter do
 
         # Obtenemos la información de equipos para enviar al nuevo miembro
         teams_data = Prueba2.TeamManager.get_teams()
+        # Obtenemos la lista de equipos con IDs secretos
+        lista_equipos = Prueba2.TeamManager.get_lista_equipos()
 
-        # Ensure teams_data is always a map, even if it somehow got converted to a list
-        teams_data_map = cond do
-          is_map(teams_data) -> teams_data
-          is_list(teams_data) -> Enum.into(teams_data, %{})
-          true -> %{}
-        end
+        # Convertir tuplas a mapas para serialización JSON
+        lista_equipos_serializable = Enum.map(lista_equipos, fn
+          {address, secret, equipo} ->
+            %{address: address, secret: secret, equipo: to_string(equipo)}
+          {address, secret} ->
+            %{address: address, secret: secret, equipo: "No especificado"}
+        end)
+
+        # Convertir cualquier MapSet a lista por robustez (aunque TeamManager ya lo hace)
+        teams_data_map = Enum.into(teams_data, %{}, fn {team, info} ->
+          players = if Map.has_key?(info, :players), do: Map.get(info, :players), else: []
+          players_list = if is_list(players), do: players, else: Enum.to_list(players)
+          {team, %{info | players: players_list}}
+        end)
 
         conn
         |> put_resp_content_type("application/json")
@@ -102,7 +112,8 @@ defmodule Prueba2.ApiRouter do
           status: "success",
           peers: peers_list,
           host_username: my_username,
-          teams: teams_data_map
+          teams: teams_data_map,
+          lista_equipos: lista_equipos_serializable
         }))
     end
   end
@@ -169,18 +180,58 @@ defmodule Prueba2.ApiRouter do
     # Obtener todos los equipos y enviarlos como respuesta
     teams = Prueba2.TeamManager.get_teams()
 
-    # Ensure teams is always a map
-    teams_map = cond do
-      is_map(teams) -> teams
-      is_list(teams) -> Enum.into(teams, %{})
-      true -> %{}
-    end
+    # Convertir cualquier MapSet a lista por robustez
+    teams_map = Enum.into(teams, %{}, fn {team, info} ->
+      players = if Map.has_key?(info, :players), do: Map.get(info, :players), else: []
+      players_list = if is_list(players), do: players, else: Enum.to_list(players)
+      {team, %{info | players: players_list}}
+    end)
 
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(200, Jason.encode!(%{
       status: "success",
       teams: teams_map
+    }))
+  end
+
+  get "/api/get-lista-equipos" do
+    # Obtener lista de equipos con IDs secretos
+    lista_equipos = Prueba2.TeamManager.get_lista_equipos()
+
+    # Convertir tuplas a mapas para serialización JSON
+    lista_equipos_serializable = Enum.map(lista_equipos, fn
+      {address, secret, equipo} ->
+        %{address: address, secret: secret, equipo: to_string(equipo)}
+      {address, secret} ->
+        %{address: address, secret: secret, equipo: "No especificado"}
+    end)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{
+      status: "success",
+      lista_equipos: lista_equipos_serializable
+    }))
+  end
+
+  get "/api/get-lista-peers" do
+    # Obtener lista de peers con información de equipo
+    lista_peers = Prueba2.TeamManager.get_lista_peers()
+
+    # Convertir tuplas a mapas para serialización JSON
+    lista_peers_serializable = Enum.map(lista_peers, fn
+      {address, username, equipo} ->
+        %{address: address, username: username, equipo: to_string(equipo)}
+      {address, username} ->
+        %{address: address, username: username, equipo: "NA"}
+    end)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{
+      status: "success",
+      lista_peers: lista_peers_serializable
     }))
   end
 
