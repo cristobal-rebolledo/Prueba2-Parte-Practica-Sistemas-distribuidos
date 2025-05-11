@@ -52,3 +52,5 @@ Dotenv: Gestión de variables de entorno
 
 ### Configuración
 Puedes modificar opciones a través de variables de entorno en un archivo .env.
+
+MAX_ALIAS_LENGTH=15  # Longitud máxima del nombre de usuario
