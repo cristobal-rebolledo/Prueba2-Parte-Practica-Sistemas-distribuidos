@@ -32,7 +32,7 @@ git clone https://github.com/tu-usuario/sistema-p2p-dados.git](https://github.co
 
 ### 3. Instalar las dependencias 
 mix deps.get
-#### Ejecución
+### 4. Ejecución
 Para ejecutar la aplicación usar el siguiente comando en directorio prueba2
 
 mix run --no-halt
