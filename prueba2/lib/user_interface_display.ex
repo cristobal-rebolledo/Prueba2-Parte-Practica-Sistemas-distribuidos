@@ -50,37 +50,7 @@ defmodule Prueba2.UserInterface.Display do
       end)
     end
   end
-  def show_team_controller_teams(teams) do
-    team_count = Prueba2.UserInterface.Helpers.safe_size(teams)
-    IO.puts("\n" <> @title_color <> "=== Lista de Equipos con ID Secreto (#{team_count}) ===" <> @reset)
 
-    # Obtener información del peer local para marcar
-    local_address = Application.get_env(:prueba2, :address)
-
-    if team_count == 0 do
-      IO.puts(@info_color <> "No hay equipos registrados en el TeamController." <> @reset)
-    else
-      IO.puts(@team_color <> "Dirección" <> @reset <> " | " <>
-              @team_color <> "Número Secreto (ID)" <> @reset <> " | " <>
-              @team_color <> "Equipo" <> @reset)
-      IO.puts(String.duplicate("-", 70))
-
-      Enum.each(teams, fn
-        {address, secret_number, equipo} ->
-          # Marcar al peer local con [TÚ]
-          local_mark = if address == local_address, do: bright() <> " [TÚ] " <> reset(), else: ""
-          IO.puts(@highlight_color <> "#{address}#{local_mark}" <> @reset <> " | " <>
-                  @info_color <> "#{secret_number}" <> @reset <> " | " <>
-                  @team_color <> "#{equipo}" <> @reset)
-        {address, secret_number} -> # Mantener compatibilidad con formato anterior
-          # Marcar al peer local con [TÚ]
-          local_mark = if address == local_address, do: bright() <> " [TÚ] " <> reset(), else: ""
-          IO.puts(@highlight_color <> "#{address}#{local_mark}" <> @reset <> " | " <>
-                  @info_color <> "#{secret_number}" <> @reset <> " | " <>
-                  @team_color <> "No especificado" <> @reset)
-      end)
-    end
-  end
 
   def show_team_controller_my_team(teams) do
     team_count = Prueba2.UserInterface.Helpers.safe_size(teams)

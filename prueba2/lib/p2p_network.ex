@@ -10,9 +10,9 @@ defmodule Prueba2.P2PNetwork do
   # API pública
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   def get_peers, do: GenServer.call(__MODULE__, :get_peers)
-  def add_peer(address, username), do: GenServer.cast(__MODULE__, {:add_peer, address, username})
-  def remove_peer(address), do: GenServer.cast(__MODULE__, {:remove_peer, address})
-  def notify_dice_roll(value, username), do: GenServer.cast(__MODULE__, {:dice_roll, value, username})
+  def add_peer(address, username), do: GenServer.cast(__MODULE__, {:add_peer, address, username}) # AGREGA PEER
+  def remove_peer(address), do: GenServer.cast(__MODULE__, {:remove_peer, address}) # ELIMINA PEER
+  def notify_dice_roll(value, username), do: GenServer.cast(__MODULE__, {:dice_roll, value, username}) # NOTIFICA TIRADA DE DADO
   def exit_network, do: GenServer.cast(__MODULE__, :exit_network)
 
   # API para gestión de equipos
@@ -69,7 +69,6 @@ defmodule Prueba2.P2PNetwork do
         {:noreply, %{state | peers: new_peers, usernames: new_usernames}}
     end
   end
-
   @impl true
   def handle_cast({:remove_peer, address}, state) do
     case Map.fetch(state.peers, address) do
@@ -77,6 +76,10 @@ defmodule Prueba2.P2PNetwork do
         # Eliminamos el log para reducir ruido
         new_peers = Map.delete(state.peers, address)
         new_usernames = MapSet.delete(state.usernames, username)
+
+        # Notificar al TeamManager que el peer se ha desconectado
+        Prueba2.TeamManager.remove_peer_from_lists(address)
+
         {:noreply, %{state | peers: new_peers, usernames: new_usernames}}
       :error ->
         {:noreply, state}
@@ -94,11 +97,17 @@ defmodule Prueba2.P2PNetwork do
     broadcast_dice_roll_to_peers(state.peers, value, username)
     {:noreply, state}
   end
-
   @impl true
   def handle_cast(:exit_network, state) do
     # Eliminamos el log para reducir ruido
     notify_exit_to_peers(state.peers)
+
+    # Limpiar también mi propia lista de equipos
+    my_address = Application.get_env(:prueba2, :address)
+    if my_address do
+      Prueba2.TeamManager.remove_peer_from_lists(my_address)
+    end
+
     {:noreply, %{state | peers: %{}, usernames: MapSet.new()}}
   end
 

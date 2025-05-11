@@ -36,6 +36,8 @@ defmodule Prueba2.TeamManager do
     GenServer.call(__MODULE__, :all_teams_ready)
   def reset_teams, do:
     GenServer.cast(__MODULE__, :reset_teams)
+  def remove_peer_from_lists(address), do:
+    GenServer.cast(__MODULE__, {:remove_peer_from_lists, address})
 
   # Nuevas funciones para las listas
   def get_lista_peers, do:
@@ -70,7 +72,7 @@ defmodule Prueba2.TeamManager do
       lista_equipos: [] # Formato: [{address :: String.t(), secret_number :: integer(), team_name :: atom()}]
     }}
   end
-
+  # Durante la inicialización de equipos
   @impl true
   def handle_call({:initialize_teams, teams, max_players}, _from, state) do
     if map_size(state.teams) > 0 do
@@ -116,10 +118,6 @@ defmodule Prueba2.TeamManager do
         broadcast_team_event("#{creator_name} se ha unido al equipo #{first_team}")
       end
 
-      # Mostrar lista inicial de equipos
-      if lista_equipos != [] do
-        display_teams_list(lista_equipos)
-      end
 
       {:reply, {:ok, "Equipos inicializados"}, %{
         state |
@@ -129,7 +127,7 @@ defmodule Prueba2.TeamManager do
       }}
     end
   end
-
+  # cuando un peer se une a un equipo
   @impl true
   def handle_call({:join_team, player_name, team_name}, _from, state) do
     team_atom =
@@ -178,8 +176,6 @@ defmodule Prueba2.TeamManager do
       broadcast_team_event("#{player_name} se unió al equipo #{team_atom}")
       notify_player_joined(player_name, team_atom)
 
-      # Mostrar la lista de equipos actualizada
-      display_teams_list(new_lista_equipos)
 
       {:reply, {:ok, "Te has unido al equipo #{team_atom}"}, %{
         state |
@@ -238,7 +234,7 @@ defmodule Prueba2.TeamManager do
       MapSet.size(team.players) > 0
     end)
 
-    all_ready = Enum.all?(teams_with_players, fn {_, team} -> team.ready end)
+    all_ready = Enum.all(teams_with_players, fn {_, team} -> team.ready end)
     enough_teams = map_size(teams_with_players) >= 2
 
     {:reply, all_ready && enough_teams, state}
@@ -282,7 +278,7 @@ defmodule Prueba2.TeamManager do
 
     {:reply, {:ok, "Equipos sincronizados"}, %{state | teams: new_teams}}
   end
-
+  # Sincronizar lista de equipos desde la red
   @impl true
   def handle_call({:sync_lista_equipos, lista_equipos_data}, _from, state) do
     # Convertir lista_equipos_data de formato JSON (lista de mapas) a formato interno (lista de tuplas)
@@ -300,8 +296,6 @@ defmodule Prueba2.TeamManager do
       item -> item
     end)
 
-    broadcast_team_event("Lista de equipos sincronizada: #{length(new_lista)} registros")
-    display_teams_list(new_lista)
 
     {:reply, {:ok, "Lista de equipos sincronizada"}, %{state | lista_equipos: new_lista}}
   end
@@ -467,6 +461,23 @@ defmodule Prueba2.TeamManager do
     {:noreply, %{state | teams: reset_teams}}
   end
 
+  @impl true
+  def handle_cast({:remove_peer_from_lists, address}, state) do
+    # Eliminar el peer de la lista_equipos
+    updated_lista_equipos = Enum.reject(state.lista_equipos, fn
+      {addr, _, _} -> addr == address
+      {addr, _} -> addr == address
+    end)
+
+    # Si hay cambios, mostramos un mensaje
+    if length(updated_lista_equipos) < length(state.lista_equipos) do
+      broadcast_team_event("Un peer se ha desconectado. Actualizada la lista de equipos.")
+    end
+
+    # Actualizar el estado
+    {:noreply, %{state | lista_equipos: updated_lista_equipos}}
+  end
+
   # Funciones privadas
   defp broadcast_team_event(message) do
     IO.puts(@team_color <> "[EQUIPO] " <> @reset <> message)
@@ -484,42 +495,5 @@ defmodule Prueba2.TeamManager do
       {_, username} -> username
       nil -> nil
     end
-  end
-  # Función para mostrar la lista de equipos actualizada
-  defp display_teams_list(lista_equipos) do
-    equipo_count = length(lista_equipos)
-    IO.puts(@team_color <> "\n===== Lista de Equipos Actualizada (#{equipo_count}) =====" <> @reset)
-
-    if (equipo_count == 0) do
-      IO.puts(@team_color <> "No hay equipos registrados todavía." <> @reset)
-    else
-      IO.puts(@team_color <> "Dirección" <> @reset <> " | " <>
-              @team_color <> "ID Secreto" <> @reset <> " | " <>
-              @team_color <> "Equipo" <> @reset)
-      IO.puts(String.duplicate("-", 60))
-
-      # Organizamos por equipo para una mejor visualización
-      lista_equipos
-      |> Enum.group_by(fn
-        {_, _, equipo} -> equipo
-        {_, _} -> :sin_equipo
-      end)
-      |> Enum.sort_by(fn {k, _} -> to_string(k) end)
-      |> Enum.each(fn {equipo, miembros} ->
-        IO.puts(@team_color <> "\nEquipo: #{equipo}" <> @reset)
-
-        Enum.each(miembros, fn
-          {address, secret_number, _} ->
-            username = find_username_by_address(address)
-            username_str = if username, do: "(#{username})", else: ""
-            IO.puts("  #{address} #{username_str} | #{secret_number}")
-          {address, secret_number} -> # Para mantener compatibilidad con formato anterior
-            username = find_username_by_address(address)
-            username_str = if username, do: "(#{username})", else: ""
-            IO.puts("  #{address} #{username_str} | #{secret_number}")
-        end)
-      end)
-    end
-    IO.puts("\n")
   end
 end

@@ -132,12 +132,15 @@ defmodule Prueba2.ApiRouter do
 
     send_resp(conn, 200, "OK")
   end
-
   post "/api/peer-exit" do
     %{"peer" => exiting_peer, "username" => exiting_username} = conn.body_params
     # Mostrar un mensaje sencillo cuando un peer se va
     IO.puts(@notification_color <> "#{exiting_username} salió de la red" <> @reset)
+
+    # Eliminar el peer de la red y actualizar las listas de equipos
     Prueba2.P2PNetwork.remove_peer(exiting_peer)
+    Prueba2.TeamManager.remove_peer_from_lists(exiting_peer)
+
     send_resp(conn, 200, Jason.encode!(%{status: "ok"}))
   end
 
