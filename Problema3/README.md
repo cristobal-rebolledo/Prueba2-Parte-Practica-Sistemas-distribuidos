@@ -13,7 +13,7 @@ Filtros por tipo de acción y rango de tiempo
 
 Ejes dinámicos o fijos según configuración
 
-## Intalar 
+## Instalar 
 python versión >= 3.0
 Anaconda última versión
 ## Instalar librerias
