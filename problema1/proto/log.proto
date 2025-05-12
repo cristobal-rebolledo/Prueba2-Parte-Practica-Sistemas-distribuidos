@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+message LogEntry {
+  int64 timestamp = 1;
+  int32 id_instancia = 2;
+  string marcador = 3;
+  string ip = 4;
+  string alias = 5;
+  string accion = 6;
+  string args = 7;
+}
+
+service LogService {
+  rpc SendLog(LogEntry) returns (google.protobuf.Empty);
+}
