@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+service LogService {
+  rpc SendLog (LogEntry) returns (Ack);
+  rpc DumpLogs (DumpRequest) returns (stream LogEntry);
+}
+
+message LogEntry {
+  int64 timestamp = 1;
+  int32 id_instancia = 2;
+  string marcador = 3;
+  string ip = 4;
+  string alias = 5;
+  string accion = 6;
+  string args = 7;
+}
+
+message Ack { bool ok = 1; }
+message DumpRequest { int32 id_instancia = 1; }

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Resultado de la votación</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            width: 400px;
+            text-align: center;
+        }
+        .header {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+        .header h2 {
+            color: #333;
+            margin: 0;
+        }
+        .content {
+            padding: 15px;
+        }
+        .status {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.approved {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        .status.rejected {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .status.timeout {
+            background-color: #fff8e1;
+            color: #f57f17;
+        }
+        .info {
+            margin-top: 20px;
+            text-align: left;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            width: 150px;
+        }
+        .info-value {
+            flex: 1;
+        }
+        .close-btn {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .close-btn:hover {
+            background-color: #0b7dda;
+        }
+        .timer {
+            margin-top: 15px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Resultado de la Votación</h2>
+        </div>
+
+        <div class="content">
+            <% status_class = case status do
+                :approved -> "approved"
+                :rejected -> "rejected"
+                :timeout -> "timeout"
+               end %>
+
+            <% status_text = case status do
+                :approved -> "APROBADA"
+                :rejected -> "RECHAZADA"
+                :timeout -> "TIEMPO AGOTADO"
+               end %>
+
+            <div class="status <%= status_class %>">
+                <%= status_text %>
+            </div>
+
+            <div class="info">
+                <div class="info-row">
+                    <div class="info-label">Solicitante:</div>
+                    <div class="info-value"><%= requester_alias %></div>
+                </div>
+
+                <div class="info-row">
+                    <div class="info-label">Equipo:</div>
+                    <div class="info-value"><%= team %></div>
+                </div>
+
+                <div class="info-row">
+                    <div class="info-label">Votos:</div>
+                    <div class="info-value"><%= positive_votes %>/<%= total_votes %></div>
+                </div>
+
+                <% if status == :approved do %>
+                <div class="info-row">
+                    <div class="info-label">Verificación:</div>
+                    <div class="info-value">Completada</div>
+                </div>
+                <% end %>
+            </div>
+
+            <button class="close-btn" onclick="window.close()">Cerrar</button>
+
+            <div class="timer">
+                <p>Esta ventana se cerrará automáticamente en <span id="countdown">15</span> segundos</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Countdown timer
+        let seconds = 15;
+        const countdownElement = document.getElementById('countdown');
+
+        const interval = setInterval(function() {
+            seconds--;
+            countdownElement.textContent = seconds;
+            if (seconds <= 0) {
+                clearInterval(interval);
+                window.close();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

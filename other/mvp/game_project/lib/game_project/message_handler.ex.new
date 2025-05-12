@@ -1,0 +1,257 @@
+defmodule GameProject.MessageHandler do
+  @moduledoc """
+  Módulo para manejar los mensajes recibidos en la aplicación.
+  """
+
+  alias GameProject.PlayerRegistry
+  alias GameProject.GRPCLogger
+  alias GameProject.GameServer
+  
+  @doc """
+  Maneja un mensaje recibido y realiza las acciones necesarias.
+
+  Tipos de mensajes soportados:
+  - :player_joined_team - Cuando un jugador se une a un equipo
+  - :player_disconnected - Cuando un jugador abandona la red
+  - :new_player_joined - Cuando un nuevo jugador se une a la red
+  """
+  def handle_message(message) do
+    # Handle nested messages with :action and :message keys (distribution instructions)
+    message = cond do
+      # Extract the actual message from distribution instructions
+      is_map(message) && Map.has_key?(message, :action) && Map.has_key?(message, :message) && 
+      message.action == :distribute_to_team ->
+        IO.puts("\n#{IO.ANSI.cyan()}Extrayendo mensaje anidado de instrucción de distribución#{IO.ANSI.reset()}")
+        message.message
+        
+      # Keep the original message in other cases
+      true -> 
+        message
+    end
+    
+    # Also handle string keys in addition to atoms
+    cond do
+      # Handle using pattern matching for atom keys
+      is_map(message) && Map.has_key?(message, :type) && message.type == :player_joined_team ->
+        handle_player_joined_team(message)
+        
+      is_map(message) && Map.has_key?(message, :type) && message.type == :player_disconnected ->
+        handle_player_disconnected(message)
+        
+      is_map(message) && Map.has_key?(message, :type) && message.type == :new_player_joined ->
+        handle_new_player_joined(message)
+      
+      # Handle string keys
+      is_map(message) && Map.has_key?(message, "type") && message["type"] in ["player_joined_team", "player_joined_team"] ->
+        # Convert string keys to atom keys
+        atomized_message = Map.new(message, fn 
+          {"type", _} -> {:type, :player_joined_team}
+          {k, v} when is_binary(k) -> {String.to_atom(k), v}
+          pair -> pair
+        end)
+        handle_player_joined_team(atomized_message)
+        
+      is_map(message) && Map.has_key?(message, "type") && message["type"] in ["player_disconnected", "player_disconnected"] ->
+        # Convert string keys to atom keys
+        atomized_message = Map.new(message, fn 
+          {"type", _} -> {:type, :player_disconnected}
+          {k, v} when is_binary(k) -> {String.to_atom(k), v}
+          pair -> pair
+        end)
+        handle_player_disconnected(atomized_message)
+        
+      is_map(message) && Map.has_key?(message, "type") && message["type"] in ["new_player_joined", "new_player_joined"] ->
+        # Convert string keys to atom keys
+        atomized_message = Map.new(message, fn 
+          {"type", _} -> {:type, :new_player_joined}
+          {k, v} when is_binary(k) -> {String.to_atom(k), v}
+          pair -> pair
+        end)
+        handle_new_player_joined(atomized_message)
+        
+      true ->
+        IO.puts("\n#{IO.ANSI.red()}Mensaje con formato desconocido: #{inspect(message)}#{IO.ANSI.reset()}")
+        {:error, :unknown_message_type}
+    end
+  end
+
+  @doc """
+  Maneja el mensaje de un jugador uniéndose a un equipo.
+  """
+  def handle_player_joined_team(%{player_alias: player_alias, team: team}) do
+    # Registrar en el log
+    {:ok, game_state} = GameServer.get_game_state()
+    {:ok, player} = PlayerRegistry.get_player(player_alias)
+
+    # Actualizar el jugador en el registro
+    {:ok, updated_player} = PlayerRegistry.update_player(player_alias, %{team: team})
+
+    # Registrar en el log
+    GRPCLogger.log_event(%{
+      timestamp: System.system_time(:second),
+      id_instancia: game_state.instance_id,
+      marcador: "ACTUALIZACIÓN",
+      ip: player.address,
+      alias: player_alias,
+      accion: "team_update",
+      args: Jason.encode!(%{team: team})
+    })
+
+    # Notificar a la consola
+    IO.puts("\n#{IO.ANSI.green()}#{player_alias} se ha unido al equipo #{team}#{IO.ANSI.reset()}")
+
+    {:ok, updated_player}
+  end
+  @doc """
+  Maneja el mensaje de un jugador abandonando la red.
+  """
+  def handle_player_disconnected(%{player_alias: player_alias} = msg) do
+    case PlayerRegistry.get_player(player_alias) do
+      {:ok, player} ->
+        # Registrar en el log
+        {:ok, game_state} = GameServer.get_game_state()
+
+        # Determinar la acción basada en la razón
+        reason = Map.get(msg, :reason, :unknown)
+        action = if reason == :leave_network, do: "leave_network", else: "player_disconnected"
+        log_message = if reason == :leave_network, do: "Abandonó la red", else: "Se desconectó"
+
+        GRPCLogger.log_event(%{
+          timestamp: System.system_time(:second),
+          id_instancia: game_state.instance_id,
+          marcador: "DESCONEXIÓN",
+          ip: player.address,
+          alias: player_alias,
+          accion: action,
+          args: Jason.encode!(%{reason: reason})
+        })
+
+        # Eliminar al jugador del registro
+        {:ok, _} = PlayerRegistry.remove_player(player_alias)
+
+        # Notificar a la consola con un mensaje más claro
+        IO.puts("\n#{IO.ANSI.yellow()}#{player_alias} #{log_message}#{IO.ANSI.reset()}")
+        {:ok, player}
+
+      {:error, :player_not_found} ->
+        {:error, :player_not_found}
+    end
+  end
+
+  @doc """
+  Maneja el mensaje de un nuevo jugador uniéndose a la red.
+  """  # Mantener un cache de mensajes de unión procesados para deduplicación
+  # Esto evita procesar múltiples veces el mismo mensaje de unión
+  @join_message_cache :join_message_cache
+  
+  # Inicializar el cache en el arranque del módulo
+  def init_join_cache do
+    :ets.new(@join_message_cache, [:set, :named_table, :public])
+  end
+  
+  # Función para verificar si un mensaje ya fue procesado
+  defp message_already_processed?(unique_id) do
+    case :ets.lookup(@join_message_cache, unique_id) do
+      [{^unique_id, _timestamp}] -> true
+      [] -> false
+    end
+  end
+  
+  # Marcar un mensaje como procesado
+  defp mark_message_as_processed(unique_id) do
+    :ets.insert(@join_message_cache, {unique_id, System.system_time(:millisecond)})
+  end
+
+  def handle_new_player_joined(full_message = %{player_data: player_data}) do
+    # Función auxiliar para acceder a campos, maneja tanto claves de átomos como strings
+    get_field = fn map, key ->
+      cond do
+        is_map_key(map, key) -> Map.get(map, key)
+        is_binary(key) and is_map_key(map, String.to_atom(key)) -> Map.get(map, String.to_atom(key))
+        is_atom(key) and is_map_key(map, Atom.to_string(key)) -> Map.get(map, Atom.to_string(key))
+        true -> nil
+      end
+    end
+
+    # Extraer datos del jugador (maneja tanto claves string como atom)
+    address = get_field.(player_data, :address) || get_field.(player_data, "address")
+    alias_name = get_field.(player_data, :alias) || get_field.(player_data, "alias")
+    team = get_field.(player_data, :team) || get_field.(player_data, "team")
+    
+    # Intentar obtener un ID único del mensaje para deduplicación
+    unique_join_id = Map.get(full_message, :unique_join_id, nil)
+    
+    # Si tenemos un ID único, verificar si ya procesamos este mensaje
+    if unique_join_id && safe_message_already_processed?(unique_join_id) do
+      IO.puts("\n#{IO.ANSI.cyan()}Mensaje de unión con ID #{unique_join_id} ya fue procesado, ignorando duplicado#{IO.ANSI.reset()}")
+      {:ok, :duplicate_message_ignored}
+    else
+      # Si tenemos un ID único, marcarlo como procesado
+      if unique_join_id do
+        safe_mark_message_as_processed(unique_join_id)
+      end
+      
+      # Verificar si tenemos los datos necesarios
+      if address == nil || alias_name == nil do
+        IO.puts("\n#{IO.ANSI.red()}Error: datos insuficientes para nuevo jugador: #{inspect(player_data)}#{IO.ANSI.reset()}")
+        {:error, :missing_required_player_data}
+      else
+        # Verificar si el jugador ya existe en el registro local
+        case PlayerRegistry.get_player_by_address(address) do
+          {:ok, existing_player} ->
+            # El jugador ya existe, probablemente debido a una condición de carrera
+            # en el protocolo de distribución
+            source = cond do
+              Map.get(full_message, :unique_join_id) -> "protocolo distribuye optimizado"
+              Map.get(full_message, :join_network) -> "endpoint /join"
+              true -> "fuente desconocida"
+            end
+              
+            IO.puts("\n#{IO.ANSI.cyan()}Jugador ya registrado recibido desde #{source}: #{alias_name} (#{address})#{IO.ANSI.reset()}")
+            
+            # Si hay alguna actualización de datos, aplicarla
+            if existing_player.team != team && team != nil do
+              IO.puts("\n#{IO.ANSI.green()}Actualizando datos del jugador ya registrado#{IO.ANSI.reset()}")
+              PlayerRegistry.update_player(alias_name, %{team: team})
+            end
+            
+            {:ok, :player_already_registered}
+
+        {:error, :player_not_found} ->
+          # El jugador no existe, lo agregamos al registro local
+          IO.puts("\n#{IO.ANSI.bright()}Añadiendo nuevo jugador a tabla local: #{alias_name} (#{address})#{IO.ANSI.reset()}")
+          player = GameProject.Models.Player.new(
+            address,
+            alias_name,
+            team
+          )
+
+          {:ok, _added_player} = PlayerRegistry.add_player(player)
+
+          # Notificar a la consola
+          IO.puts("\n#{IO.ANSI.green()}Nuevo jugador se unió a la red: #{alias_name} (#{address})#{IO.ANSI.reset()}")
+
+          # Registrar en el log (si es posible obtener el game_state)
+          case GameServer.get_game_state() do
+            {:ok, game_state} ->
+              GRPCLogger.log_event(%{
+                timestamp: System.system_time(:second),
+                id_instancia: game_state.instance_id,
+                marcador: "ACTUALIZACIÓN",
+                ip: GameProject.Network.get_local_ip(),
+                alias: "system",
+                accion: "player_added_to_registry",
+                args: Jason.encode!(%{
+                  player_alias: alias_name,
+                  player_address: address
+                })
+              })
+            _ ->
+              :ok
+          end
+
+          {:ok, player}
+      end
+    end
+  end
+end

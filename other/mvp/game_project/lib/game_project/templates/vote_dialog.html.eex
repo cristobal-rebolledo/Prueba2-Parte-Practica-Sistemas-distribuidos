@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Solicitud para unirse a equipo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            width: 400px;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+        .header h2 {
+            color: #333;
+            margin: 0;
+        }
+        .content {
+            padding: 15px 0;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            width: 120px;
+        }
+        .info-value {
+            flex: 1;
+        }
+        .buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 10px 25px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .btn-approve {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-approve:hover {
+            background-color: #45a049;
+        }
+        .btn-reject {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn-reject:hover {
+            background-color: #d32f2f;
+        }
+        .timer {
+            text-align: center;
+            margin-top: 15px;
+            color: #666;
+        }
+        .team-members {
+            margin-top: 15px;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .team-member {
+            margin-bottom: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Solicitud para unirse a equipo</h2>
+            <div>ID de votación: <%= vote_id %></div>
+        </div>
+
+        <div class="content">
+            <div class="info-row">
+                <div class="info-label">Solicitante:</div>
+                <div class="info-value"><%= requester_alias %></div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">IP Solicitante:</div>
+                <div class="info-value"><%= requester_address %></div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Equipo destino:</div>
+                <div class="info-value"><%= team %></div>
+            </div>
+
+            <div class="team-members">
+                <div><strong>Miembros actuales (<%= length(members) %>):</strong></div>
+                <%= for member <- members do %>
+                <div class="team-member">- <%= member.alias %> (<%= member.address %>)</div>
+                <% end %>
+            </div>
+
+            <div class="buttons">
+                <form action="/approve_join_vote" method="POST">
+                    <input type="hidden" name="vote_id" value="<%= vote_id %>">
+                    <input type="hidden" name="player_alias" value="<%= player_alias %>">
+                    <input type="hidden" name="team" value="<%= team %>">
+                    <input type="hidden" name="requester" value="<%= requester_alias %>">
+                    <input type="hidden" name="secret_number" value="<%= secret_number %>">
+                    <input type="hidden" name="approved" value="true">
+                    <button type="submit" class="btn btn-approve">Aprobar</button>
+                </form>
+
+                <form action="/approve_join_vote" method="POST">
+                    <input type="hidden" name="vote_id" value="<%= vote_id %>">
+                    <input type="hidden" name="player_alias" value="<%= player_alias %>">
+                    <input type="hidden" name="team" value="<%= team %>">
+                    <input type="hidden" name="requester" value="<%= requester_alias %>">
+                    <input type="hidden" name="secret_number" value="<%= secret_number %>">
+                    <input type="hidden" name="approved" value="false">
+                    <button type="submit" class="btn btn-reject">Rechazar</button>
+                </form>
+            </div>
+
+            <div class="timer">
+                <p>Esta ventana se cerrará automáticamente en <span id="countdown">30</span> segundos</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Countdown timer
+        let seconds = 30;
+        const countdownElement = document.getElementById('countdown');
+
+        const interval = setInterval(function() {
+            seconds--;
+            countdownElement.textContent = seconds;
+            if (seconds <= 0) {
+                clearInterval(interval);
+                window.close();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

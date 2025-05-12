@@ -1,0 +1,28 @@
+Quiero que hagas un proyecto en elixir, el cual debe funcionar asi. Cada proceso debe conseguir su ip local y publica y establecer un alias, ultimo el cual se puede cambiar en el menu principal, antes de conectarse. 
+```elixir
+ :inets.start
+{:ok, {_, _, inet_addr}} = :httpc.request('http://api.ipify.org')
+:inets.stop 
+```
+y exponer un servidor http en un puerto el cual se pregunta en consola. Cada proceso tiene una tabla, la cual contiene:
+[Dirección | Alias | Equipo | Numero secreto (generado automaticamente al iniciar)] indexada por equipo, y tambien un struct que define el estado de juego.
+Cuando el proceso se inicia, pregunta si crear una red o unirse, en caso de crear, se pregunta la cantidad de quipos (de 1 a 15), cantidad de puntaje maxima y la cantidad de jugadores por equipo (de 1 a n (definido en .env)). Los nombres de los equipos disponibles se escogen desde una lista de atoms ['Equipo dragon', 'Equipo planta', 'Equipo rojo'...] sin repetirse. Tambien, se coloca una clave guardada en sha-256. Luego queda esperando conexiones que soliciten unirse.
+
+Cuando se escoge unirse, se coloca la ip y el puerto de alguien en una red y se solicita la tabla enviando sus datos (Direccion, alias, numero secreto y la clave de acceso). Si la clave es correcta, el proceso devuelve la tabla, pero sin los numeros secretos de los demas y el jugador queda sin equipo.
+
+Por cada equipo (y tambien alguien sin equipo) se le envia un mensaje a un miembro que pida distribuir (mensaje "distribuye") esta información a su equipo informando que lo agreguen a su tabla, si falla la conexion hacia alguien, se borra de la tabla y se envia un mensaje de "distribuye" que solicite borrar ese jugador al resto y asi sucesivamente si falla otro mas.
+
+Cuando se quiera unir a un equipo, se le solicita a todos los miembros del equipo si lo dejan unirse, cada persona que diga que si devuelve su numero secreto, si no, devuelven -1.
+Cuando al menos la mitad del equipo haya respondido que si, se le pregunta a alguien random del equipo si puede unirse, envia las direcciones de quienes respondieron y la suma de ese numero secreto. El integrante del grupo revisa que la suma sea correcta y si lo es, manda un mensaje "distribuye" informandole a los demas que se va a unir al equipo, para que actualizen tu tabla. Ademas, al nuevo integrante se le informan los numeros secretos de este equipo, para que borre los demas numeros que conoce de su tabla y conozca los numeros de su equipo, por si alguien le solicita unirse.
+Si un equipo estaba vacio, se le informa a alguien random simplemente que se va a unir a un equipo vacio, ese revisa, y si efectivamente esta vacio, se usa un mensaje distribuye para informarle a los jugadores que actualicen el equipo de ese jugador.
+
+El programa representa un juego, y cada instancia es independiente, no usan memoria compartida y pueden estar en distintas localizaciones. El estado de juego guarda el numero de turno, el puntaje de cada equipo, y una tabla que vaya marcando a quien le ha tocado turno por equipo, de manera que, en cada turno, un jugador tira un dado por su equipo (1d4, 1d6 o 1d8), eso hace un mensaje "distribuye" para que actualicen el puntaje de ese equipo y quede en espera (max 10 segundos por turno, sino lo salta), cuando cada equipo termine su turno, pasa otro jugador arbitrario que no haya jugado en su equipo. Cuando todos en el equipo hayan tirado, se reinicia la tabla de los que han tirado. Cuando un jugador del equipo logre sumar (puntuacion equipo + tirada actual) mas que la puntuacion maxima establecida al inicio, distribuye a los demas la nueva puntuacion y que termino el juego.
+
+En al interfaz del terminal, es importante que se vaya limpiando y mostrando el estado de juego. 
+
+En las funciones relacionadas con envio de mensajes, deja una llamada a una funcion que no haga nada tambien, para que sea un placeholder de lo que mas adelante va a ser un envio de logs por gRPC a un servidor central.
+
+Tambien, muy importante, haz un programa que pruebe cada una de estas funciones por separado, en especial la comunicacion especial de la aplicacion ("distribuye") la cual escoge a un random de cada equipo (Sin equipo tambien es valido) para que envie un mensaje a cada miembro de su equipo (incluyendose) y revise si a alguien no le llego el mensaje para volver a enviar otro distribuye informando que borren a ese jugador, todos los mensajes de distribuye siguen al misma estructura, asi que solo se necesita una funcion.
+
+La progamacion debe ser muy modular, cohesiva y de manera experta, de manera que quede corta y elegante, sin codigo duplicado, y usar librerias y wrappers para simplificar al maximo el código.
+Se debe buscar extensivamente por errores al implementar de manera que la implementacion final sea pulcra y probada.
