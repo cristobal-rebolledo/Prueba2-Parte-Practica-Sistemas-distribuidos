@@ -15,7 +15,9 @@ Ejes dinámicos o fijos según configuración
 
 ## Instalar 
 python versión >= 3.0
+
 Anaconda última versión
+
 ## Instalar librerias
 
 Si estás usando Anaconda, puedes instalar las dependencias necesarias ejecutando:
